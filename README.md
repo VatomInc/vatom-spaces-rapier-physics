@@ -1,6 +1,6 @@
 # Rapier Physics 🔌
 
-<center>
+<p align='center'>
     <img src='icon/plugin-icon.png' height='128' />
     <h2>Rapier Physics for Vatom Spaces</h2>
     <p>
@@ -9,7 +9,7 @@
         <!--<img src='https://img.shields.io/github/package-json/version/vatominc/vatom-spaces-rapier-physics?label=version' />-->
     </p>
     <hr/>
-</center>
+</p>
 
 This plugin is designed to be used from within [Vatom Spaces](https://vatom.com). It provides synchronized physics simulation across the space, using the Rapier physics library.
 
