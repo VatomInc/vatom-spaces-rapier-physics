@@ -1,0 +1,14 @@
+{
+  "id": "com.vatom.rapier-physics",
+  "name": "Rapier Physics",
+  "version": "1.0.0",
+  "beta": true,
+  "description": "Uses the Rapier physics engine to simulate realtime synchronized physics",
+  "longDescription": "Uses the Rapier physics engine to simulate realtime physics in your space. Physics is synchronized, so everyone will see the objects moving the same way.",
+  "configuration": "-",
+  "category": "Developer Tools",
+  "businessId": "1",
+  "price": 0,
+  "releaseNotes": "-",
+  "entrypoint": ""
+}
