@@ -1,6 +1,7 @@
 # Rapier Physics 🔌
 ![](https://img.shields.io/badge/status-alpha-red)
-![](https://img.shields.io/badge/requires%20app-v1.6.367_(dev)-orange)
+![](https://img.shields.io/github/package-json/version/VatomInc/vatom-spaces-rapier-physics)
+![](https://img.shields.io/badge/requires%20app-v1.6.367-darkgreen)
 
 <p align='center'>
     <img src='icon/plugin-icon.png' height='128' />
