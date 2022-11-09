@@ -1,13 +1,11 @@
 # Rapier Physics 🔌
+![](https://img.shields.io/badge/status-alpha-red)
+![](https://img.shields.io/badge/requires%20app-v1.6.367_(dev)-orange)
 
 <p align='center'>
     <img src='icon/plugin-icon.png' height='128' />
-    <h2>Rapier Physics for Vatom Spaces</h2>
-    <p>
-        <img src='https://img.shields.io/badge/status-alpha-red' />
-        <img src='https://img.shields.io/badge/requires%20app-v1.6.367_(dev)-orange' />
-        <!--<img src='https://img.shields.io/github/package-json/version/vatominc/vatom-spaces-rapier-physics?label=version' />-->
-    </p>
+    <br/>
+    Rapier Physics for Vatom Spaces
     <hr/>
 </p>
 
