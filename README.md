@@ -6,7 +6,7 @@
     <img src='icon/plugin-icon.png' height='128' />
     <br/>
     Rapier Physics for Vatom Spaces
-    <hr/>
+    <br/>
 </p>
 
 This plugin is designed to be used from within [Vatom Spaces](https://vatom.com). It provides synchronized physics simulation across the space, using the Rapier physics library.
