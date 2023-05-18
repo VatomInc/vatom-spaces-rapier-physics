@@ -13,9 +13,6 @@ export default class PhysicsComponent extends BaseComponent {
     /** @type {RAPIER.RigidBody} The object body */
     body = null
 
-    /** @type {RAPIER.Collider} The object collider */
-    collider = null
-
     /** The mode we are operating in, set in the Editor */
     mode = 'Static'
 
@@ -40,6 +37,27 @@ export default class PhysicsComponent extends BaseComponent {
 
     /** If true, we should send a network update of this object on the next frame */
     sendUpdateNextFrame = false
+
+    /** Register this component */
+    static register(plugin) {
+
+        // Register it
+        plugin.objects.registerComponent(this, {
+            id: 'collider',
+            name: 'Physics',
+            description: 'Add physics properties to this object',
+            settings: [
+                { type: 'checkbox', id: 'enabled', name: 'Enabled', help: "If not enabled, this object will not have any physics applied." },
+                { type: 'checkbox', id: 'synchronized', name: 'Synchronized', help: "If enabled, physics updates will be sent to all nearby users. All users will then see the object move in the same way. If disabled, the object moves independently for each user." },
+                { type: 'select', id: 'mode', name: 'Mode', default: 'Static', values: ["Static", "Dynamic", "Kinematic"], help: "Select the mode of operation for this physics object. Static objects do not ever move, dynamic objects are moved by the physics engine, and kinematic objects are moved externally (ie elevators, moving platforms, etc)." },
+                { type: 'select', id: 'type', name: 'Shape type', default: 'Automatic', values: ['Automatic', 'Sphere', 'Cube', 'Cylinder', 'Convex Hull', 'Trimesh'], help: "Select the shape of the physics entity to attach to this object.<br><br><ul style='text-align: left; '> <li><b>Automatic:</b> Attempts to detect the shape type automatically.</li> <li><b>Sphere, Cube, Cylinder:</b> These are standard shape types and are the easiest on performance.</li> <li><b>Convex Hull:</b> Creates a closed, optimized shape around the mesh to use for collision.</li> <li><b>Trimesh:</b> Uses every triangle of the mesh directly for collision. This is the most accurate, but is heavy on performance.</li> </ul>" },
+                { type: 'number', id: 'mass', name: 'Mass (KG)', default: 1, help: "The weight of the object in kilograms. Defaults to 1kg." },
+                { type: 'checkbox', id: 'disable-rotation', name: 'Prevent rotation', help: "If enabled, the object will not rotate but can still be pushed around." },
+                { type: 'checkbox', id: 'click-bounce', name: 'Bounce on Click', help: "If enabled, clicking this object will cause it to bounce in the air briefly." },
+            ]
+        })
+
+    }
 
     /** Called on load */
     onLoad() {
@@ -72,7 +90,7 @@ export default class PhysicsComponent extends BaseComponent {
     }
 
     /** (Re)create the physics collider for this object */
-    createPhysics() {
+    async createPhysics() {
 
         // Remove previous physics if any
         this.removePhysics()
@@ -87,12 +105,19 @@ export default class PhysicsComponent extends BaseComponent {
 
         // Get properties from the Editor
         this.mode = this.getField('mode') || 'Static'
-        this.type = this.getField('type') || 'Sphere'
+        this.type = this.getField('type') || 'Automatic'
         this.synchronized = !!this.getField('synchronized')
         this.mass = Math.max(0.01, parseFloat(this.getField('mass')) || 1)
         this.disableRotation = !!this.getField('disable-rotation')
         this.bounceOnClick = !!this.getField('click-bounce')
         this.syncCounter = 0
+
+        // If type is automatic, try to detect it from the object type
+        if (this.type == 'Automatic' && this.fields.type == 'cylinder')     this.type = 'Cylinder'
+        else if (this.type == 'Automatic' && this.fields.type == 'cube')    this.type = 'Cube'
+        else if (this.type == 'Automatic' && this.fields.type == 'sphere')  this.type = 'Sphere'
+        else if (this.type == 'Automatic' && this.mode == 'Static')         this.type = 'Trimesh'       // <-- If not moving, we can use the more expensive Trimesh mode (allows for holes)
+        else if (this.type == 'Automatic')                                  this.type = 'Convex Hull'   // <-- If moving, we must use the cheaper Convex Hull mode (no holes)
 
         // Create physics rigidbody description
         console.debug(`[Physics] Creating physics entity: object=${this.objectID} name=${this.fields.name} mode=${this.mode} type=${this.type} sync=${this.synchronized}`)
@@ -132,54 +157,113 @@ export default class PhysicsComponent extends BaseComponent {
             desc.lockRotations()
 
         // Create body
-        this.body = this.world.createRigidBody(desc)
+        let body = this.world.createRigidBody(desc)
 
         // Create shape collider
         if (this.type == 'Sphere') {
 
             // Get ball size
-            let sizeX = this.fields.scale_x || 0
-            let sizeY = this.fields.scale_y || 0
-            let sizeZ = this.fields.scale_z || 0
-            let minimumSize = 0.1
-            let diameter = Math.max(minimumSize, Math.max(sizeX, Math.max(sizeY, sizeZ)))
+            let sizeUniform = this.fields.scale || 1
+            let sizeX = 0.5 * (this.fields.scale_x || 1) * sizeUniform
+            let sizeY = 0.5 * (this.fields.scale_y || 1) * sizeUniform
+            let sizeZ = 0.5 * (this.fields.scale_z || 1) * sizeUniform
+            let radius = Math.max(sizeX, Math.max(sizeY, sizeZ))
 
             // Create ball collider
-            let desc2 = RAPIER.ColliderDesc.ball(diameter / 2)
-            this.collider = this.world.createCollider(desc2, this.body)
+            let desc2 = RAPIER.ColliderDesc.ball(radius)
+            this.world.createCollider(desc2, body)
 
         } else if (this.type == 'Cube') {
 
             // Get cube size
-            let minimumSize = 0.1
-            let sizeX = Math.max(minimumSize, this.fields.scale_x || 0)
-            let sizeY = Math.max(minimumSize, this.fields.scale_y || 0)
-            let sizeZ = Math.max(minimumSize, this.fields.scale_z || 0)
+            let sizeUniform = this.fields.scale || 1
+            let sizeX = 1 * (this.fields.scale_x || 1) * sizeUniform
+            let sizeY = 1 * (this.fields.scale_y || 1) * sizeUniform
+            let sizeZ = 1 * (this.fields.scale_z || 1) * sizeUniform
 
             // Create ball collider
             let desc2 = RAPIER.ColliderDesc.cuboid(sizeX / 2, sizeY / 2, sizeZ / 2)
-            this.collider = this.world.createCollider(desc2, this.body)
+            this.world.createCollider(desc2, body)
 
         } else if (this.type == 'Cylinder') {
 
             // Get cube size
             let minimumSize = 0.1
-            let sizeX = Math.max(minimumSize, this.fields.scale_x || 0)
-            let sizeY = Math.max(minimumSize, this.fields.scale_y || 0)     // <-- Cylinder height
-            let sizeZ = Math.max(minimumSize, this.fields.scale_z || 0)
-            let diameter = Math.max(sizeX, sizeZ)
+            let sizeUniform = this.fields.scale || 1
+            let sizeX = 0.5 * (this.fields.scale_x || 1) * sizeUniform
+            let sizeY = 1.0 * (this.fields.scale_y || 1) * sizeUniform    // <-- Cylinder height
+            let sizeZ = 0.5 * (this.fields.scale_z || 1) * sizeUniform
+            let radius = Math.max(sizeX, sizeZ)
 
             // Create ball collider
-            let desc2 = RAPIER.ColliderDesc.cylinder(sizeY / 2, diameter / 2)
-            this.collider = this.world.createCollider(desc2, this.body)
+            let desc2 = RAPIER.ColliderDesc.cylinder(sizeY / 2, radius)
+            this.world.createCollider(desc2, body)
+
+        } else if (this.type == 'Convex Hull') {
+
+            // Get vertex points
+            let objects = await this.plugin.objects.getVertices(this.objectID)
+
+            // Get scale value
+            let scaleUniform = this.fields.scale || 1
+            let scaleX = (this.fields.scale_x || 1) * scaleUniform
+            let scaleY = (this.fields.scale_y || 1) * scaleUniform
+            let scaleZ = (this.fields.scale_z || 1) * scaleUniform
+
+            // Create convex hulls
+            for (let obj of objects) {
+
+                // Apply scale to vertices
+                for (let i = 0 ; i < obj.vertices.length ; i += 3) {
+                    obj.vertices[i + 0] *= scaleX
+                    obj.vertices[i + 1] *= scaleY
+                    obj.vertices[i + 2] *= scaleZ
+                }
+
+                // Create it
+                let desc2 = RAPIER.ColliderDesc.convexHull(obj.vertices)
+                this.world.createCollider(desc2, body)
+
+            }
+
+        } else if (this.type == 'Trimesh') {
+
+            // Get vertex points
+            let objects = await this.plugin.objects.getVertices(this.objectID)
+
+            // Get scale value
+            let scaleUniform = this.fields.scale || 1
+            let scaleX = (this.fields.scale_x || 1) * scaleUniform
+            let scaleY = (this.fields.scale_y || 1) * scaleUniform
+            let scaleZ = (this.fields.scale_z || 1) * scaleUniform
+
+            // Create convex hulls
+            for (let obj of objects) {
+
+                // Apply scale to vertices
+                for (let i = 0 ; i < obj.vertices.length ; i += 3) {
+                    obj.vertices[i + 0] *= scaleX
+                    obj.vertices[i + 1] *= scaleY
+                    obj.vertices[i + 2] *= scaleZ
+                }
+
+                // Create it
+                let desc2 = RAPIER.ColliderDesc.trimesh(obj.vertices, obj.indices)
+                this.world.createCollider(desc2, body)
+
+            }
 
         } else {
 
-            // Unknown shape!
+            // Unknown shape! Create a generic cube
             console.warn(`[Physics] Unknown shape type: object=${this.objectID} name=${this.fields.name} type=${this.type}`)
-            return
+            let desc2 = RAPIER.ColliderDesc.cuboid(1, 1, 1)
+            this.world.createCollider(desc2, body)
 
         }
+
+        // Done
+        this.body = body
 
     }
 
@@ -194,7 +278,6 @@ export default class PhysicsComponent extends BaseComponent {
         console.debug(`[Physics] Removing physics entity: object=${this.objectID} name=${this.fields.name}`)
         this.world.removeRigidBody(this.body)
         this.body = null
-        this.collider = null
 
     }
 
@@ -296,7 +379,7 @@ export default class PhysicsComponent extends BaseComponent {
         // visuals though if two users are pushing an object at the same time...
 
         // Stop if not loaded
-        if (!this.body || !this.collider)
+        if (!this.body)
             return
 
         // Stop if not in synchronized mode
@@ -340,7 +423,7 @@ export default class PhysicsComponent extends BaseComponent {
     onRemoteUpdateReceived(data) {
 
         // Stop if not loaded
-        if (!this.body || !this.collider)
+        if (!this.body)
             return
 
         // Stop if not in synchronized mode

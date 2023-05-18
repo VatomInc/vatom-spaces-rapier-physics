@@ -7,7 +7,10 @@
   "scripts": {
     "build": "webpack",
     "publish": "npx -p @vatom/cli vatom plugin publish",
+    "login": "npx -p @vatom/cli vatom auth",
+    "login2": "node ../varius-cli/build auth",
     "sideload": "npm run build && npx -p @vatom/cli vatom plugin sideload",
+    "sideload2": "npm run build && node ../varius-cli/build plugin sideload",
     "start": "webpack serve"
   },
   "devDependencies": {

@@ -65,20 +65,7 @@ export default class RapierPhysicsPlugin extends BasePlugin {
         setInterval(this.loop.bind(this), 1000/this.simulationFPS)
 
         // Register component
-        this.objects.registerComponent(PhysicsComponent, {
-            id: 'collider',
-            name: 'Physics',
-            description: 'Add physics properties to this object',
-            settings: [
-                { type: 'checkbox', id: 'enabled', name: 'Enabled', help: "If not enabled, this object will not have any physics applied." },
-                { type: 'checkbox', id: 'synchronized', name: 'Synchronized', help: "If enabled, physics updates will be sent to all nearby users. All users will then see the object move in the same way. If disabled, the object moves independently for each user." },
-                { type: 'select', id: 'mode', name: 'Mode', default: 'Static', values: ["Static", "Dynamic", "Kinematic"], help: "Select the mode of operation for this physics object. Static objects do not ever move, dynamic objects are moved by the physics engine, and kinematic objects are moved externally (ie elevators, moving platforms, etc)." },
-                { type: 'select', id: 'type', name: 'Shape type', default: 'Sphere', values: ['Sphere', 'Cube', 'Cylinder'], help: "Select the shape of the physics entity to attach to this object." },
-                { type: 'number', id: 'mass', name: 'Mass (KG)', default: 1, help: "The weight of the object in kilograms. Defaults to 1kg." },
-                { type: 'checkbox', id: 'disable-rotation', name: 'Prevent rotation', help: "If enabled, the object will not rotate but can still be pushed around." },
-                { type: 'checkbox', id: 'click-bounce', name: 'Bounce on Click', help: "If enabled, clicking this object will cause it to bounce in the air briefly." },
-            ]
-        })
+        PhysicsComponent.register(this)
 
     }
     
