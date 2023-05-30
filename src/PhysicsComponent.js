@@ -1,4 +1,5 @@
 import RAPIER from '@dimforge/rapier3d-compat'
+import { BaseComponent } from 'vatom-spaces-plugins'
 
 /**
  * Physics component for a single object.
@@ -12,6 +13,9 @@ export default class PhysicsComponent extends BaseComponent {
 
     /** @type {RAPIER.RigidBody} The object body */
     body = null
+
+    /** Created colliders */
+    colliders = []
 
     /** The mode we are operating in, set in the Editor */
     mode = 'Static'
@@ -37,6 +41,14 @@ export default class PhysicsComponent extends BaseComponent {
 
     /** If true, we should send a network update of this object on the next frame */
     sendUpdateNextFrame = false
+
+    /** True if the object is currently touching the current user */
+    get isTouchingCurrentUser() {
+        return !!this.plugin.activeCollisions.find(c => (
+            (c.colliderHandle1 == this.plugin.userCollider.handle && c.object2 == this) ||
+            (c.colliderHandle2 == this.plugin.userCollider.handle && c.object1 == this)
+        ))
+    }
 
     /** Register this component */
     static register(plugin) {
@@ -158,6 +170,7 @@ export default class PhysicsComponent extends BaseComponent {
 
         // Create body
         let body = this.world.createRigidBody(desc)
+        let colliders = []
 
         // Create shape collider
         if (this.type == 'Sphere') {
@@ -171,7 +184,8 @@ export default class PhysicsComponent extends BaseComponent {
 
             // Create ball collider
             let desc2 = RAPIER.ColliderDesc.ball(radius)
-            this.world.createCollider(desc2, body)
+            let collider = this.world.createCollider(desc2, body)
+            colliders.push(collider)
 
         } else if (this.type == 'Cube') {
 
@@ -183,12 +197,12 @@ export default class PhysicsComponent extends BaseComponent {
 
             // Create ball collider
             let desc2 = RAPIER.ColliderDesc.cuboid(sizeX / 2, sizeY / 2, sizeZ / 2)
-            this.world.createCollider(desc2, body)
+            let collider = this.world.createCollider(desc2, body)
+            colliders.push(collider)
 
         } else if (this.type == 'Cylinder') {
 
             // Get cube size
-            let minimumSize = 0.1
             let sizeUniform = this.fields.scale || 1
             let sizeX = 0.5 * (this.fields.scale_x || 1) * sizeUniform
             let sizeY = 1.0 * (this.fields.scale_y || 1) * sizeUniform    // <-- Cylinder height
@@ -197,7 +211,8 @@ export default class PhysicsComponent extends BaseComponent {
 
             // Create ball collider
             let desc2 = RAPIER.ColliderDesc.cylinder(sizeY / 2, radius)
-            this.world.createCollider(desc2, body)
+            let collider = this.world.createCollider(desc2, body)
+            colliders.push(collider)
 
         } else if (this.type == 'Convex Hull') {
 
@@ -222,7 +237,8 @@ export default class PhysicsComponent extends BaseComponent {
 
                 // Create it
                 let desc2 = RAPIER.ColliderDesc.convexHull(obj.vertices)
-                this.world.createCollider(desc2, body)
+                let collider = this.world.createCollider(desc2, body)
+                colliders.push(collider)
 
             }
 
@@ -249,7 +265,8 @@ export default class PhysicsComponent extends BaseComponent {
 
                 // Create it
                 let desc2 = RAPIER.ColliderDesc.trimesh(obj.vertices, obj.indices)
-                this.world.createCollider(desc2, body)
+                let collider = this.world.createCollider(desc2, body)
+                colliders.push(collider)
 
             }
 
@@ -258,12 +275,18 @@ export default class PhysicsComponent extends BaseComponent {
             // Unknown shape! Create a generic cube
             console.warn(`[Physics] Unknown shape type: object=${this.objectID} name=${this.fields.name} type=${this.type}`)
             let desc2 = RAPIER.ColliderDesc.cuboid(1, 1, 1)
-            this.world.createCollider(desc2, body)
+            let collider = this.world.createCollider(desc2, body)
+            colliders.push(collider)
 
         }
 
+        // Enable collision events
+        for (let collider of colliders)
+            collider.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS)
+
         // Done
         this.body = body
+        this.colliders = colliders
 
     }
 
@@ -278,6 +301,7 @@ export default class PhysicsComponent extends BaseComponent {
         console.debug(`[Physics] Removing physics entity: object=${this.objectID} name=${this.fields.name}`)
         this.world.removeRigidBody(this.body)
         this.body = null
+        this.colliders = []
 
     }
 
@@ -357,7 +381,7 @@ export default class PhysicsComponent extends BaseComponent {
     }
 
     /** Called when we detect that the user has collided with this object */
-    didCollideWithUser(event) {
+    didCollideWithUser() {
 
         // Send update out to the network on the next frame, once velocities etc have been calculated
         this.sendUpdateNextFrame = true

@@ -1,6 +1,6 @@
 {
   "name": "com.vatom.rapier-physics",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "description": "A plugin for Vatom Spaces.",
   "main": "src/index.js",
   "author": "jjv360",
@@ -25,6 +25,7 @@
     "webpack-dev-server": "^4.13.2"
   },
   "dependencies": {
-    "@dimforge/rapier3d-compat": "^0.10.0"
+    "@dimforge/rapier3d-compat": "^0.11.2",
+    "vatom-spaces-plugins": "^1.1.6"
   }
 }
