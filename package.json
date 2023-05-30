@@ -1,13 +1,16 @@
 {
   "name": "com.vatom.rapier-physics",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "description": "A plugin for Vatom Spaces.",
   "main": "src/index.js",
   "author": "jjv360",
   "scripts": {
     "build": "webpack",
     "publish": "npx -p @vatom/cli vatom plugin publish",
+    "login": "npx -p @vatom/cli vatom auth",
+    "login2": "node ../varius-cli/build auth",
     "sideload": "npm run build && npx -p @vatom/cli vatom plugin sideload",
+    "sideload2": "npm run build && node ../varius-cli/build plugin sideload",
     "start": "webpack serve"
   },
   "devDependencies": {
@@ -22,6 +25,7 @@
     "webpack-dev-server": "^4.13.2"
   },
   "dependencies": {
-    "@dimforge/rapier3d-compat": "^0.10.0"
+    "@dimforge/rapier3d-compat": "^0.11.2",
+    "vatom-spaces-plugins": "^1.1.6"
   }
 }

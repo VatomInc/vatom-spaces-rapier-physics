@@ -1,5 +1,6 @@
 import RAPIER from '@dimforge/rapier3d-compat'
 import PhysicsComponent from './PhysicsComponent'
+import { BasePlugin } from 'vatom-spaces-plugins'
 
 /**
  * Main physics plugin
@@ -29,6 +30,9 @@ export default class RapierPhysicsPlugin extends BasePlugin {
     numMessagesIn = 0
     numMessagesOut = 0
 
+    /** List of active collisions between objects */
+    activeCollisions = []
+
     /** Called on load */
     async onLoad() {
 
@@ -53,32 +57,21 @@ export default class RapierPhysicsPlugin extends BasePlugin {
         this.userCollider = this.world.createCollider(RAPIER.ColliderDesc.cylinder(1.8 / 2, 0.5), this.userBody)
 
         // Enable collision events for the user's body, so we can send them over the network
-        this.userCollider.setActiveEvents(RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS)
+        this.userCollider.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS)
 
         // Event collector
         this.eventQueue = new RAPIER.EventQueue(true)
-
-        // Ignore very tiny collisions
-        this.userCollider.setContactForceEventThreshold(0.0001)
 
         // Start game loop
         setInterval(this.loop.bind(this), 1000/this.simulationFPS)
 
         // Register component
-        this.objects.registerComponent(PhysicsComponent, {
-            id: 'collider',
-            name: 'Physics',
-            description: 'Add physics properties to this object',
-            settings: [
-                { type: 'checkbox', id: 'enabled', name: 'Enabled', help: "If not enabled, this object will not have any physics applied." },
-                { type: 'checkbox', id: 'synchronized', name: 'Synchronized', help: "If enabled, physics updates will be sent to all nearby users. All users will then see the object move in the same way. If disabled, the object moves independently for each user." },
-                { type: 'select', id: 'mode', name: 'Mode', default: 'Static', values: ["Static", "Dynamic", "Kinematic"], help: "Select the mode of operation for this physics object. Static objects do not ever move, dynamic objects are moved by the physics engine, and kinematic objects are moved externally (ie elevators, moving platforms, etc)." },
-                { type: 'select', id: 'type', name: 'Shape type', default: 'Sphere', values: ['Sphere', 'Cube', 'Cylinder'], help: "Select the shape of the physics entity to attach to this object." },
-                { type: 'number', id: 'mass', name: 'Mass (KG)', default: 1, help: "The weight of the object in kilograms. Defaults to 1kg." },
-                { type: 'checkbox', id: 'disable-rotation', name: 'Prevent rotation', help: "If enabled, the object will not rotate but can still be pushed around." },
-                { type: 'checkbox', id: 'click-bounce', name: 'Bounce on Click', help: "If enabled, clicking this object will cause it to bounce in the air briefly." },
-            ]
-        })
+        PhysicsComponent.register(this)
+
+        // Register hook API
+        this.hooks.addHandler('com.vatom.rapier-physics:applyImpulse', this.onHookApplyImpulse.bind(this))
+        this.hooks.addHandler('com.vatom.rapier-physics:getState', this.onHookGetState.bind(this))
+        this.hooks.addHandler('com.vatom.rapier-physics:setState', this.onHookSetState.bind(this))
 
     }
     
@@ -107,32 +100,63 @@ export default class RapierPhysicsPlugin extends BasePlugin {
         this.updateUserCollider()
 
         // Fetch collision events
-        this.eventQueue.drainContactForceEvents(event => {
+        this.eventQueue.drainCollisionEvents((colliderID1, colliderID2, started) => {
 
-            // Get colliders that were affected
-            let handle1 = event.collider1(); // Handle of the first collider involved in the event.
-            let handle2 = event.collider2(); // Handle of the second collider involved in the event.
+            // Catch errors
+            try {
 
-            // Ensure one of them is the current user, and get the other one
-            let handle = null
-            if (handle1 == this.userCollider.handle && handle2 != this.userCollider.handle) {
-                handle = handle2
-            } else if (handle1 != this.userCollider.handle && handle2 == this.userCollider.handle) {
-                handle = handle1
-            } else {
+                // Get object ID for colliding objects
+                let object1 = this.physicsObjects.find(o => o.colliders?.find(c => c.handle === colliderID1))
+                let object1currentUser = colliderID1 == this.userCollider.handle
+                let object2 = this.physicsObjects.find(o => o.colliders?.find(c => c.handle === colliderID2))
+                let object2currentUser = colliderID2 == this.userCollider.handle
 
-                // Two objects are colliding unrelated to the current user, we don't care about these
-                return
+                // Check if should add or remove the collision
+                if (started) {
+
+                    // Add new collision
+                    let collision = new ActiveCollision()
+                    collision.colliderHandle1 = colliderID1
+                    collision.colliderHandle2 = colliderID2
+                    collision.object1 = object1
+                    collision.object2 = object2
+                    this.activeCollisions.push(collision)
+
+                } else {
+
+                    // Remove existing collision(s)
+                    this.activeCollisions = this.activeCollisions.filter(c => !(
+                        (c.colliderHandle1 == colliderID1 && c.colliderHandle2 == colliderID2) ||
+                        (c.colliderHandle1 == colliderID2 && c.colliderHandle2 == colliderID1)
+                    ))
+
+                }
+
+                // Check if one is the user
+                if (object1currentUser || object2currentUser) {
+
+                    // One of them is the user, send event to the other one
+                    let object = object1currentUser ? object2 : object1
+                    if (object?.didCollideWithUser && started)
+                        object.didCollideWithUser()
+
+                }
+                
+                // Send out a notification hook
+                this.hooks.trigger('com.vatom.rapier-physics:onCollisionEvent', {
+                    objectID1: object1currentUser ? 'currentuser' : object1?.objectID,
+                    objectID2: object2currentUser ? 'currentuser' : object2?.objectID,
+                    colliderID1,
+                    colliderID2,
+                    started
+                })
+
+            } catch (err) {
+
+                // This should never happen, but just in case
+                console.warn(`[Physics] Error while processing contact force event:`, err)
 
             }
-
-            // Get the object that has this handle
-            let object = this.physicsObjects.find(o => o.collider.handle == handle)
-            if (!object)
-                return
-
-            // Pass it on
-            object.didCollideWithUser(event)
 
         })
 
@@ -142,30 +166,51 @@ export default class RapierPhysicsPlugin extends BasePlugin {
     }
 
     /** Update the position of the user's collider */
-    updateUserCollider() {
+    async updateUserCollider() {
 
         // Only do once at a time
         if (this.isUpdatingUserCollider) return
         this.isUpdatingUserCollider = true
 
-        // Get user's position from the main app.
-        // TODO: Ideally the main app should have a bridge function to register for position updates on the user...
-        // That would be way more efficient than requesting it every frame
-        this.user.getPosition().then(pos => {
+        // Catch errors
+        try {
+
+            // Get user's position from the main app.
+            // TODO: Ideally the main app should have a bridge function to register for position updates on the user...
+            // That would be way more efficient than requesting it every frame
+            let pos = await this.user.getPosition()
 
             // Increase height, since our collider is centered in the middle but the user position is at the feet
             pos.y += 1.8 / 2
 
+            // Check if changed
+            if (this.oldUserPos?.x == pos.x && this.oldUserPos?.y == pos.y && this.oldUserPos?.z == pos.z) return
+            this.oldUserPos = pos
+
             // Update our collider
             this.userBody.setTranslation(pos)
+
+            // Notify any objects that are touching the current user
+            for (let i = 0 ; i < this.physicsObjects.length ; i++) {
+
+                // Notify objects the user is touching
+                let object = this.physicsObjects[i]
+                if (object.isTouchingCurrentUser)
+                    object.didCollideWithUser()
+
+            }
+
+        } catch (err) {
+
+            // Error during update
+            console.warn(`[Physics] Error while updating user collider:`, err)
+
+        } finally {
+
+            // Finish updating
             this.isUpdatingUserCollider = false
 
-        }).catch(err => {
-
-            // Silently ignore errors, this should never error
-            this.isUpdatingUserCollider = false
-
-        })
+        }
 
     }
 
@@ -186,8 +231,8 @@ export default class RapierPhysicsPlugin extends BasePlugin {
 
         // Create output
         let result = {
-            name: `Physics (Rapier v${RAPIER.version()} - time=${Math.floor(this.frameDuration)}ms usage=${percent}%)`,
-            text: `awake=${awakeEntities} total=${this.physicsObjects.length} messages=${this.numMessagesOut}/s▲ ${this.numMessagesIn}/s▼`
+            name: `Physics v${require('../package.json').version} (Rapier v${RAPIER.version()} - time=${Math.floor(this.frameDuration)}ms usage=${percent}%)`,
+            text: `awake=${awakeEntities} total=${this.physicsObjects.length} collisions=${this.activeCollisions.length} messages=${this.numMessagesOut}/s▲ ${this.numMessagesIn}/s▼`
         }
 
         // Reset analytics
@@ -223,5 +268,101 @@ export default class RapierPhysicsPlugin extends BasePlugin {
         }
 
     }
+
+    /** Called when a remote plugin wants to send an impulse to an object */
+    onHookApplyImpulse(data) {
+
+        // Find associated object
+        let obj = this.physicsObjects.find(o => o.objectID == data.objectID)
+        if (!obj)
+            throw new Error("Object not found")
+
+        // Stop if no body
+        if (!obj.body)
+            throw new Error("Object has no physics body")
+
+        // Stop if not dynamic
+        if (obj.mode != 'Dynamic')
+            throw new Error("Object is not dynamic")
+
+        // Send impulse
+        obj.body.applyImpulse({ x: data.impulse?.x || 0, y: data.impulse?.y || 0, z: data.impulse?.z || 0 }, true)
+        obj.sendUpdateNextFrame = true
+
+        // Done
+        return true
+
+    }
+
+    /** Fetch the current state of an object */
+    onHookGetState(data) {
+
+        // Find associated object
+        let obj = this.physicsObjects.find(o => o.objectID == data.objectID)
+        if (!obj)
+            throw new Error("Object not found")
+
+        // Stop if no body
+        if (!obj.body)
+            throw new Error("Object has no physics body")
+
+        // Return info
+        let translation = obj.body.translation()
+        let quaternion = obj.body.rotation()
+        let angvel = obj.body.angvel()
+        let linvel = obj.body.linvel()
+        return {
+            counter: obj.syncCounter,
+            translation,
+            quaternion,
+            angvel,
+            linvel,
+            isSleeping: obj.body.isSleeping()
+        }
+
+    }
+
+    /** Set the current state of the object */
+    onHookSetState(data) {
+
+        // Find associated object
+        let obj = this.physicsObjects.find(o => o.objectID == data.objectID)
+        if (!obj)
+            throw new Error("Object not found")
+
+        // Stop if no body
+        if (!obj.body)
+            throw new Error("Object has no physics body")
+
+        // Stop if not dynamic
+        if (obj.mode != 'Dynamic')
+            throw new Error("Object is not dynamic")
+
+        // Update state
+        if (data.angvel) obj.body.setAngvel({ x: data.angvel.x || 0, y: data.angvel.y || 0, z: data.angvel.z || 0 })
+        if (data.linvel) obj.body.setLinvel({ x: data.linvel.x || 0, y: data.linvel.y || 0, z: data.linvel.z || 0 })
+        obj.sendUpdateNextFrame = true
+
+        // Done
+        return true
+
+    }
+
+}
+
+/** Active collision */
+class ActiveCollision {
+
+    /** Collider handle 1 */
+    colliderHandle1 = 0
+
+    /** Collider handle 2 */
+    colliderHandle2 = 0
+
+    /** @type {PhysicsComponent} Object 1 */
+    object1 = null
+
+    /** @type {PhysicsComponent} Object 2 */
+    object2 = null
 
 }
